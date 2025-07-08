@@ -71,9 +71,10 @@ impl DockerCompose {
                     .arg("info")
                     .arg("--format")
                     .arg("{{.Version.OsArch}}");
-                get_cmd_output(alt_cmd, "Get os arch".to_string())
-                    .trim()
-                    .to_string()
+                match get_cmd_output_result(alt_cmd, "Get os arch".to_string()) {
+                    Ok(value) => value.trim().to_string(),
+                    Err(e) => panic!("Failed to get OS architecture using both formats: {}", e)
+                }
             }
         }
     }

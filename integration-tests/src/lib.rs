@@ -122,10 +122,6 @@ pub fn catalog_sqlite() -> Arc<dyn Catalog> {
 
 pub async fn catalog_postgres() -> Arc<dyn Catalog> {
     let context = PostgresTestContext::new().await;
-    // We leak the context so that the Drop implementation is not called
-    // and the container is not torn down before the test finishes.
-    // This is a workaround for not being able to use fixtures that manage lifetime.
-    let context = Box::leak(Box::new(context));
     context.catalog.clone()
 }
 
@@ -136,9 +132,5 @@ pub fn storage_fs() -> Arc<Storage> {
 
 pub fn storage_s3() -> Arc<Storage> {
     let context = MinioTestContext::new();
-    // We leak the context so that the Drop implementation is not called
-    // and the container is not torn down before the test finishes.
-    // This is a workaround for not being able to use fixtures that manage lifetime.
-    let context = Box::leak(Box::new(context));
     context.storage.clone()
 }
