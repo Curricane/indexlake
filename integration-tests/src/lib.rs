@@ -11,22 +11,21 @@ use indexlake::{catalog::Catalog, storage::Storage};
 use indexlake_catalog_postgres::PostgresCatalog;
 use indexlake_catalog_sqlite::SqliteCatalog;
 use opendal::services::S3Config;
+use uuid::Uuid;
 
 use crate::docker::DockerCompose;
 
 static ENV_LOGGER: OnceLock<()> = OnceLock::new();
 
 pub fn init_env_logger() {
+    // We don't care about the result, it's fine if it's already set.
     unsafe {
-        std::env::set_var(
+        let _ = std::env::set_var(
             "RUST_LOG",
             "info,indexlake=debug,indexlake_catalog_postgres=debug,indexlake_catalog_sqlite=debug,indexlake_index_rstar=debug",
         );
     }
-    ENV_LOGGER.get_or_init(|| {
-        env_logger::init();
-        ()
-    });
+    ENV_LOGGER.get_or_init(env_logger::init);
 }
 
 pub fn setup_sqlite_db() -> String {
@@ -42,25 +41,78 @@ pub fn setup_sqlite_db() -> String {
     db_path
 }
 
-pub async fn setup_postgres_db() -> DockerCompose {
-    let docker_compose = DockerCompose::new(
-        "postgres",
-        format!("{}/testdata/postgres", env!("CARGO_MANIFEST_DIR")),
-    );
-    docker_compose.down();
-    docker_compose.up();
-    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-    docker_compose
+pub struct PostgresTestContext {
+    docker_compose: DockerCompose,
+    pub catalog: Arc<dyn Catalog>,
 }
 
-pub fn setup_minio() -> DockerCompose {
-    let docker_compose = DockerCompose::new(
-        "minio",
-        format!("{}/testdata/minio", env!("CARGO_MANIFEST_DIR")),
-    );
-    docker_compose.down();
-    docker_compose.up();
-    docker_compose
+impl PostgresTestContext {
+    pub async fn new() -> Self {
+        let project_name = format!("pg-{}", Uuid::new_v4().as_simple());
+        let docker_compose = DockerCompose::new(
+            &project_name,
+            format!("{}/testdata/postgres", env!("CARGO_MANIFEST_DIR")),
+        );
+
+        docker_compose.up();
+        // A short delay to ensure the service is fully ready.
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        let port = docker_compose.get_service_port("postgres", 5432);
+        let catalog = Arc::new(
+            PostgresCatalog::try_new("localhost", port, "postgres", "password", Some("postgres"))
+                .await
+                .unwrap(),
+        );
+        Self {
+            docker_compose,
+            catalog,
+        }
+    }
+}
+
+impl Drop for PostgresTestContext {
+    fn drop(&mut self) {
+        self.docker_compose.down();
+    }
+}
+
+pub struct MinioTestContext {
+    docker_compose: DockerCompose,
+    pub storage: Arc<Storage>,
+}
+
+impl MinioTestContext {
+    pub fn new() -> Self {
+        let project_name = format!("minio-{}", Uuid::new_v4().as_simple());
+        let docker_compose = DockerCompose::new(
+            &project_name,
+            format!("{}/testdata/minio", env!("CARGO_MANIFEST_DIR")),
+        );
+        docker_compose.up();
+        // A short delay to ensure the service is fully ready.
+        std::thread::sleep(std::time::Duration::from_secs(2));
+
+        let port = docker_compose.get_service_port("minio", 9000);
+        let mut config = S3Config::default();
+        config.endpoint = Some(format!("http://127.0.0.1:{}", port));
+        config.access_key_id = Some("admin".to_string());
+        config.secret_access_key = Some("password".to_string());
+        config.region = Some("us-east-1".to_string());
+        config.disable_config_load = true;
+        config.disable_ec2_metadata = true;
+        let storage = Arc::new(Storage::new_s3(config, "indexlake"));
+        Self {
+            docker_compose,
+            storage,
+        }
+    }
+}
+
+impl Drop for MinioTestContext {
+    fn drop(&mut self) {
+        self.docker_compose.down();
+    }
 }
 
 pub fn catalog_sqlite() -> Arc<dyn Catalog> {
@@ -69,12 +121,12 @@ pub fn catalog_sqlite() -> Arc<dyn Catalog> {
 }
 
 pub async fn catalog_postgres() -> Arc<dyn Catalog> {
-    let _ = setup_postgres_db().await;
-    Arc::new(
-        PostgresCatalog::try_new("localhost", 5432, "postgres", "password", Some("postgres"))
-            .await
-            .unwrap(),
-    )
+    let context = PostgresTestContext::new().await;
+    // We leak the context so that the Drop implementation is not called
+    // and the container is not torn down before the test finishes.
+    // This is a workaround for not being able to use fixtures that manage lifetime.
+    let context = Box::leak(Box::new(context));
+    context.catalog.clone()
 }
 
 pub fn storage_fs() -> Arc<Storage> {
@@ -83,14 +135,10 @@ pub fn storage_fs() -> Arc<Storage> {
 }
 
 pub fn storage_s3() -> Arc<Storage> {
-    let _ = setup_minio();
-    std::thread::sleep(std::time::Duration::from_secs(5));
-    let mut config = S3Config::default();
-    config.endpoint = Some("http://127.0.0.1:9000".to_string());
-    config.access_key_id = Some("admin".to_string());
-    config.secret_access_key = Some("password".to_string());
-    config.region = Some("us-east-1".to_string());
-    config.disable_config_load = true;
-    config.disable_ec2_metadata = true;
-    Arc::new(Storage::new_s3(config, "indexlake"))
+    let context = MinioTestContext::new();
+    // We leak the context so that the Drop implementation is not called
+    // and the container is not torn down before the test finishes.
+    // This is a workaround for not being able to use fixtures that manage lifetime.
+    let context = Box::leak(Box::new(context));
+    context.storage.clone()
 }

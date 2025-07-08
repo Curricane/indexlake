@@ -125,4 +125,28 @@ impl DockerCompose {
             ),
         )
     }
+
+    pub fn get_service_port(&self, service_name: &str, internal_port: u16) -> u16 {
+        let mut cmd = Command::new("docker");
+        cmd.current_dir(&self.docker_compose_dir);
+
+        cmd.args(vec![
+            "compose",
+            "-p",
+            self.project_name.as_str(),
+            "port",
+            service_name,
+            &internal_port.to_string(),
+        ]);
+
+        let output = get_cmd_output(
+            cmd,
+            format!(
+                "Getting port for service {} in project {}",
+                service_name, self.project_name
+            ),
+        );
+        // Output is like "0.0.0.0:32779" or "[::]:32779"
+        output.trim().split(':').last().unwrap().parse().unwrap()
+    }
 }

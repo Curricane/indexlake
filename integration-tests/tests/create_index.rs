@@ -5,11 +5,8 @@ use indexlake_integration_tests::{
 };
 use std::sync::Arc;
 
-use std::collections::HashMap;
-
 use indexlake::table::IndexCreation;
 use indexlake_index_hash::{HashIndex, HashIndexParams};
-use indexlake_index_rstar::RStarIndex;
 
 #[rstest::rstest]
 #[case(async { catalog_sqlite() }, storage_fs())]

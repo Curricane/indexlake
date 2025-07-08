@@ -1,7 +1,5 @@
 use arrow::array::{Int64Array, RecordBatch, StringArray};
 use arrow::datatypes::{DataType, Field, Schema};
-use arrow::util::pretty::pretty_format_batches;
-use futures::TryStreamExt;
 use indexlake::{
     LakeClient,
     catalog::Catalog,

@@ -1,6 +1,4 @@
 use arrow::datatypes::{DataType, Field, Schema};
-use arrow::util::pretty::pretty_format_batches;
-use futures::TryStreamExt;
 use indexlake::catalog::INTERNAL_ROW_ID_FIELD_REF;
 use indexlake::{
     LakeClient,

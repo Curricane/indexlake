@@ -9,10 +9,7 @@ use indexlake::{
     storage::Storage,
     table::{TableConfig, TableCreation},
 };
-use indexlake_integration_tests::{
-    catalog_postgres, catalog_sqlite, data::prepare_testing_table, init_env_logger, storage_fs,
-    storage_s3,
-};
+use indexlake_integration_tests::{catalog_sqlite, init_env_logger, storage_fs};
 use std::sync::Arc;
 
 use arrow::array::{Int32Array, RecordBatch};
